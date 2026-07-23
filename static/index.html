@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>App Time Guard</title>
+  <link rel="stylesheet" href="/static/style.css?v=13" />
+</head>
+<body>
+  <div class="shell">
+    <header class="top">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true"></div>
+        <div>
+          <h1>App Time Guard</h1>
+          <p class="muted">本机应用时段 · 时长 · 定时启停。未设时段 = 全天开放。</p>
+        </div>
+      </div>
+      <div id="status-box" class="status-box">加载状态…</div>
+    </header>
+
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-tab="apps" role="tab">应用</button>
+      <button class="tab" data-tab="discover" role="tab">发现</button>
+      <button class="tab" data-tab="stats" role="tab">统计</button>
+    </nav>
+
+    <main>
+      <section id="tab-apps" class="panel active">
+        <div class="toolbar">
+          <div>
+            <h2>已登记应用</h2>
+            <p class="muted tight">按近 7 天使用时长排序；点「规则」单独配置。</p>
+          </div>
+          <div class="actions">
+            <input id="apps-search" type="search" placeholder="搜索名称 / 进程 / 路径…" title="搜索应用" />
+            <select id="apps-filter-cat" title="按分类筛选">
+              <option value="">全部分类</option>
+              <option value="entertainment">游戏娱乐</option>
+              <option value="study">学习</option>
+              <option value="work">办公</option>
+              <option value="other">其他</option>
+            </select>
+            <button type="button" id="btn-toggle-form" class="btn">手动登记</button>
+            <button type="button" id="btn-refresh-apps" class="btn">刷新</button>
+          </div>
+        </div>
+
+        <form id="app-form" class="card form-grid form-collapsed">
+          <h3>手动登记 / 更新</h3>
+          <input type="hidden" id="app-id" />
+          <label>名称 <input id="app-name" required placeholder="记事本" /></label>
+          <label>可执行路径 <input id="app-exe" required placeholder="C:\Windows\System32\notepad.exe" /></label>
+          <label>进程名 <input id="app-proc" placeholder="留空则取 exe 文件名" /></label>
+          <label>分类
+            <select id="app-category">
+              <option value="other">其他（每天 05:00–22:20）</option>
+              <option value="entertainment">游戏娱乐（周末 06:00–22:20，日限 2h）</option>
+              <option value="study">学习（每天 05:00–22:20）</option>
+              <option value="work">办公（每天 05:00–22:20）</option>
+            </select>
+          </label>
+          <label>每日限额(分钟) <input id="app-daily" type="number" min="1" placeholder="空=跟分类默认" /></label>
+          <label>单次会话限额(分钟) <input id="app-session" type="number" min="1" placeholder="空=不限" /></label>
+          <label class="check"><input id="app-enabled" type="checkbox" checked /> 启用管控</label>
+          <label class="check"><input id="app-apply-defaults" type="checkbox" checked /> 按分类写入默认时段/限额</label>
+          <label class="full">备注 <input id="app-notes" /></label>
+          <div class="actions full">
+            <button type="submit" class="btn primary">保存</button>
+            <button type="button" id="btn-app-reset" class="btn">清空</button>
+          </div>
+        </form>
+
+        <div id="apps-list" class="app-list"></div>
+      </section>
+
+      <section id="tab-discover" class="panel">
+        <div class="toolbar">
+          <div>
+            <h2>自动发现</h2>
+            <p class="muted tight">扫描运行中进程与开始菜单，勾选后导入。</p>
+          </div>
+          <div class="actions">
+            <button type="button" id="btn-scan" class="btn primary">扫描本机</button>
+            <button type="button" id="btn-import-selected" class="btn">导入勾选</button>
+          </div>
+        </div>
+        <div class="discover-bar card">
+          <label class="check"><input type="checkbox" id="discover-check-all" /> 全选可导入</label>
+          <label>默认分类
+            <select id="discover-default-cat">
+              <option value="">用智能建议</option>
+              <option value="entertainment">游戏娱乐</option>
+              <option value="study">学习</option>
+              <option value="work">办公</option>
+              <option value="other">其他</option>
+            </select>
+          </label>
+          <input id="discover-filter" type="search" placeholder="筛选名称 / 路径…" />
+          <span id="discover-meta" class="muted"></span>
+        </div>
+        <div id="discover-list" class="discover-grid">
+          <div class="empty-state">点击「扫描本机」开始发现应用</div>
+        </div>
+      </section>
+
+      <section id="tab-stats" class="panel">
+        <div class="toolbar">
+          <div>
+            <h2>用量报告</h2>
+            <p class="muted tight">今日详情 · 会话时间轴 · 历史趋势。</p>
+          </div>
+          <div class="actions">
+            <select id="stats-range" title="历史区间">
+              <option value="7">近 7 天</option>
+              <option value="14">近 14 天</option>
+              <option value="30" selected>近 30 天</option>
+            </select>
+            <button type="button" id="btn-refresh-stats" class="btn">刷新</button>
+          </div>
+        </div>
+
+        <div class="report-block">
+          <div class="report-head">
+            <h3>会话时间轴</h3>
+            <div class="timeline-controls">
+              <button type="button" id="timeline-prev" class="btn" title="前一天">‹</button>
+              <input type="date" id="timeline-day" title="选择年月日" />
+              <button type="button" id="timeline-today" class="btn">今天</button>
+              <button type="button" id="timeline-next" class="btn" title="后一天">›</button>
+            </div>
+          </div>
+          <div class="card timeline-card">
+            <div class="tl-detail-head">
+              <p id="timeline-meta" class="muted tight"></p>
+              <span class="muted tight tl-zoom-hint">滚轮缩放</span>
+            </div>
+
+            <div class="tl-filter" id="tl-filter" aria-label="应用筛选"></div>
+
+            <div class="tl-detail-panel" id="tl-detail-panel" title="在时间轴上滚动滚轮可放大/缩小">
+              <div class="tl-detail-scroll" id="tl-detail-scroll">
+                <div class="tl-detail-inner" id="tl-detail-inner"></div>
+              </div>
+            </div>
+
+            <div class="tl-overview" id="tl-overview" title="拖动选区或点击定位">
+              <div class="tl-overview-ruler" id="tl-overview-ruler"></div>
+              <div class="tl-overview-body" id="tl-overview-body">
+                <div class="tl-overview-bars" id="tl-overview-bars"></div>
+                <div class="tl-brush" id="tl-brush" role="slider" aria-label="可见时段">
+                  <span class="tl-brush-handle left" data-edge="start"></span>
+                  <span class="tl-brush-handle right" data-edge="end"></span>
+                </div>
+              </div>
+            </div>
+
+            <div class="tl-summary">
+              <div class="stats-kpis tl-kpis" id="tl-kpis"></div>
+              <div class="tl-range-row">
+                <div class="tl-range-chip" id="tl-range-chip">00:00 → 24:00</div>
+                <div class="tl-presets" id="tl-presets">
+                  <button type="button" class="btn sm" data-preset="all">全天</button>
+                  <button type="button" class="btn sm" data-preset="am">上午</button>
+                  <button type="button" class="btn sm" data-preset="pm">下午</button>
+                  <button type="button" class="btn sm" data-preset="evening">晚间</button>
+                  <button type="button" class="btn sm" data-preset="hour">近1小时</button>
+                </div>
+              </div>
+              <div class="tl-stack" id="tl-stack"></div>
+            </div>
+
+            <div class="tl-table-head">
+              <h3>选区会话</h3>
+              <span class="muted" id="tl-table-meta"></span>
+            </div>
+            <div class="table-wrap">
+              <table id="tl-session-table">
+                <thead>
+                  <tr>
+                    <th>应用</th><th>开始</th><th>结束</th><th>时长</th><th>状态</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <div id="timeline-tip" class="timeline-tip hidden" role="tooltip"></div>
+          </div>
+        </div>
+
+        <div class="report-block">
+          <div class="report-head">
+            <h3>今日报告</h3>
+            <span id="today-date-label" class="muted"></span>
+          </div>
+          <div class="stats-kpis" id="stats-kpis"></div>
+          <div class="stats-grid">
+            <div class="card chart-card">
+              <div class="chart-title-row">
+                <h3>今日应用用量</h3>
+                <span class="muted chart-unit">分钟 · 占比</span>
+              </div>
+              <div id="chart-today" class="bar-chart h-bars"></div>
+            </div>
+            <div class="card chart-card">
+              <div class="chart-title-row">
+                <h3>今日分类占比</h3>
+                <span class="muted chart-unit">分钟</span>
+              </div>
+              <div id="chart-today-cat" class="bar-chart h-bars"></div>
+            </div>
+          </div>
+          <div class="card">
+            <h3>今日明细</h3>
+            <div class="table-wrap">
+              <table id="today-detail-table">
+                <thead>
+                  <tr>
+                    <th>#</th><th>应用</th><th>分类</th><th>分钟</th><th>占比</th><th>启动</th><th>击杀</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="report-block">
+          <div class="report-head">
+            <h3>历史报告</h3>
+            <span id="history-range-label" class="muted"></span>
+          </div>
+          <div class="stats-kpis" id="history-kpis"></div>
+          <div class="stats-grid">
+            <div class="card chart-card">
+              <div class="chart-title-row">
+                <h3>每日总用量</h3>
+                <span class="muted chart-unit">分钟</span>
+              </div>
+              <div id="chart-week" class="bar-chart v-bars"></div>
+            </div>
+            <div class="card chart-card">
+              <div class="chart-title-row">
+                <h3>历史分类占比</h3>
+                <span class="muted chart-unit">分钟</span>
+              </div>
+              <div id="chart-history-cat" class="bar-chart h-bars"></div>
+            </div>
+          </div>
+          <div class="card chart-card">
+            <div class="chart-title-row">
+              <h3>应用排行（区间合计）</h3>
+              <span class="muted chart-unit">分钟 · 占比</span>
+            </div>
+            <div id="chart-rank" class="bar-chart h-bars"></div>
+          </div>
+          <div class="card">
+            <h3>历史明细</h3>
+            <div class="table-wrap tall">
+              <table id="daily-table">
+                <thead>
+                  <tr>
+                    <th>日期</th><th>应用</th><th>分类</th><th>分钟</th><th>击杀</th><th>启动</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>审计日志</h3>
+          <div class="table-wrap">
+            <table id="audit-table">
+              <thead><tr><th>时间</th><th>动作</th><th>App</th><th>详情</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="rules-modal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop" data-close="1"></div>
+    <div class="modal-panel">
+      <div class="row">
+          <div class="rules-head">
+            <div id="rules-icon-wrap" class="icon-wrap"></div>
+            <div>
+              <h2 id="rules-title">规则</h2>
+              <p class="app-badge" id="rules-app-badge"></p>
+            </div>
+          </div>
+        <button class="btn" data-close="1">关闭</button>
+      </div>
+      <p class="muted" id="rules-hint">
+        以下规则<strong>只作用于当前应用</strong>。未添加时段 = 全天开放。
+      </p>
+
+      <div class="card">
+        <h3>可用时段</h3>
+        <div class="weekday-row" id="win-days">
+          <label><input type="checkbox" value="0" checked />一</label>
+          <label><input type="checkbox" value="1" checked />二</label>
+          <label><input type="checkbox" value="2" checked />三</label>
+          <label><input type="checkbox" value="3" checked />四</label>
+          <label><input type="checkbox" value="4" checked />五</label>
+          <label><input type="checkbox" value="5" />六</label>
+          <label><input type="checkbox" value="6" />日</label>
+        </div>
+        <div class="form-grid compact">
+          <label>开始 <input id="win-start" type="time" value="09:00" /></label>
+          <label>结束 <input id="win-end" type="time" value="21:00" /></label>
+          <div class="actions">
+            <button type="button" class="btn primary" id="btn-add-windows">按勾选添加</button>
+            <button type="button" class="btn" id="btn-win-workdays">工作日</button>
+            <button type="button" class="btn" id="btn-win-everyday">每天</button>
+          </div>
+        </div>
+        <table id="win-table">
+          <thead><tr><th>星期</th><th>开始</th><th>结束</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h3>定时启停</h3>
+        <div class="form-grid compact">
+          <label>重复
+            <select id="sch-weekday">
+              <option value="-1">每天</option>
+              <option value="0">周一</option><option value="1">周二</option><option value="2">周三</option>
+              <option value="3">周四</option><option value="4">周五</option><option value="5">周六</option>
+              <option value="6">周日</option>
+            </select>
+          </label>
+          <label>动作
+            <select id="sch-action">
+              <option value="launch">定时启动</option>
+              <option value="close">定时关闭</option>
+            </select>
+          </label>
+          <label>时刻 <input id="sch-time" type="time" value="09:00" /></label>
+          <div class="actions">
+            <button type="button" class="btn primary" id="btn-add-schedule">添加</button>
+            <button type="button" class="btn" id="btn-sch-1min">1 分钟后启动</button>
+            <button type="button" class="btn" id="btn-sch-1min-close">1 分钟后关闭</button>
+            <button type="button" class="btn" id="btn-sch-today">设为今天</button>
+          </div>
+        </div>
+        <table id="sch-table">
+          <thead><tr><th>重复</th><th>动作</th><th>时刻</th><th>上次触发</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+  <script src="/static/app.js?v=15"></script>
+</body>
+</html>
